@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplicación de Cifrado - Seguridad Informática</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState } = React;
+
+        // ==================== ALGORITMOS DE CIFRADO ====================
+
+        // **Cifrado XOR**
+        // Implementación del cifrado XOR que usa una operación bit a bit
+        const CifradoXOR = {
+          cifrar: (texto, clave) => {
+            if (!clave) return { error: "La clave no puede estar vacía" };
+            let resultado = '';
+            for (let i = 0; i < texto.length; i++) {
+              // Aplicamos XOR entre el carácter del texto y el carácter de la clave (cíclica)
+              resultado += String.fromCharCode(
+                texto.charCodeAt(i) ^ clave.charCodeAt(i % clave.length)
+              );
+            }
+            // Convertimos a hexadecimal para visualización
+            return { resultado: Array.from(resultado).map(c => 
+              c.charCodeAt(0).toString(16).padStart(2, '0')
+            ).join('') };
+          },
+          
+          descifrar: (textoHex, clave) => {
+            if (!clave) return { error: "La clave no puede estar vacía" };
+            try {
+              // Convertimos de hexadecimal a texto
+              let texto = '';
+              for (let i = 0; i < textoHex.length; i += 2) {
+                texto += String.fromCharCode(parseInt(textoHex.substr(i, 2), 16));
+              }
+              // Aplicamos XOR nuevamente (es simétrico)
+              let resultado = '';
+              for (let i = 0; i < texto.length; i++) {
+                resultado += String.fromCharCode(
+                  texto.charCodeAt(i) ^ clave.charCodeAt(i % clave.length)
+                );
+              }
+              return { resultado };
+            } catch (e) {
+              return { error: "Texto cifrado inválido" };
+            }
+          }
+        };
+
+        // **Cifrado César**
+        // Desplazamiento simple del alfabeto
+        const CifradoCesar = {
+          cifrar: (texto, desplazamiento) => {
+            const desp = parseInt(desplazamiento) || 3;
+            let resultado = '';
+            
+            for (let char of texto) {
+              if (char.match(/[a-z]/i)) {
+                const codigo = char.charCodeAt(0);
+                // Determinar si es mayúscula o minúscula
+                const base = codigo >= 65 && codigo <= 90 ? 65 : 97;
+                // Aplicar desplazamiento circular
+                resultado += String.fromCharCode(((codigo - base + desp) % 26) + base);
+              } else {
+                resultado += char; // Mantener caracteres no alfabéticos
+              }
+            }
+            return { resultado };
+          },
+          
+          descifrar: (texto, desplazamiento) => {
+            const desp = parseInt(desplazamiento) || 3;
+            // Descifrar es cifrar con desplazamiento negativo
+            return CifradoCesar.cifrar(texto, 26 - desp);
+          }
+        };
+
+        // **Cifrado Vigenère**
+        // Cifrado polialfabético que usa una palabra clave
+        const CifradoVigenere = {
+          cifrar: (texto, clave) => {
+            if (!clave) return { error: "La clave no puede estar vacía" };
+            clave = clave.toLowerCase();
+            let resultado = '';
+            let indiceC = 0;
+            
+            for (let char of texto) {
+              if (char.match(/[a-z]/i)) {
+                const codigo = char.charCodeAt(0);
+                const base = codigo >= 65 && codigo <= 90 ? 65 : 97;
+                // Desplazamiento basado en la letra de la clave
+                const desp = clave.charCodeAt(indiceC % clave.length) - 97;
+                resultado += String.fromCharCode(((codigo - base + desp) % 26) + base);
+                indiceC++;
+              } else {
+                resultado += char;
+              }
+            }
+            return { resultado };
+          },
+          
+          descifrar: (texto, clave) => {
+            if (!clave) return { error: "La clave no puede estar vacía" };
+            clave = clave.toLowerCase();
+            let resultado = '';
+            let indiceC = 0;
+            
+            for (let char of texto) {
+              if (char.match(/[a-z]/i)) {
+                const codigo = char.charCodeAt(0);
+                const base = codigo >= 65 && codigo <= 90 ? 65 : 97;
+                // Desplazamiento inverso
+                const desp = clave.charCodeAt(indiceC % clave.length) - 97;
+                resultado += String.fromCharCode(((codigo - base - desp + 26) % 26) + base);
+                indiceC++;
+              } else {
+                resultado += char;
+              }
+            }
+            return { resultado };
+          }
+        };
+
+        // **Cifrado Playfair**
+        // Cifrado de sustitución digráfica usando una matriz 5x5
+        const CifradoPlayfair = {
+          // Crear matriz 5x5 a partir de la clave
+          crearMatriz: (clave) => {
+            clave = clave.toLowerCase().replace(/j/g, 'i').replace(/[^a-z]/g, '');
+            let alfabeto = 'abcdefghiklmnopqrstuvwxyz'; // Sin J
+            let claveUnica = [...new Set(clave + alfabeto)].join('');
+            let matriz = [];
+            
+            for (let i = 0; i < 5; i++) {
+              matriz.push(claveUnica.substr(i * 5, 5).split(''));
+            }
+            return matriz;
+          },
+          
+          // Encontrar posición de una letra en la matriz
+          encontrarPosicion: (matriz, letra) => {
+            for (let i = 0; i < 5; i++) {
+              for (let j = 0; j < 5; j++) {
+                if (matriz[i][j] === letra) return { fila: i, col: j };
+              }
+            }
+            return null;
+          },
+          
+          // Preparar texto para Playfair (pares de letras)
+          prepararTexto: (texto) => {
+            texto = texto.toLowerCase().replace(/j/g, 'i').replace(/[^a-z]/g, '');
+            let preparado = '';
+            
+            for (let i = 0; i < texto.length; i += 2) {
+              let a = texto[i];
+              let b = texto[i + 1] || 'x';
+              // Si las letras son iguales, insertar 'x'
+              if (a === b) {
+                preparado += a + 'x';
+                i--;
+              } else {
+                preparado += a + b;
+              }
+            }
+            return preparado;
+          },
+          
+          cifrar: (texto, clave) => {
+            if (!clave) return { error: "La clave no puede estar vacía" };
+            
+            const matriz = CifradoPlayfair.crearMatriz(clave);
+            const textoPrep = CifradoPlayfair.prepararTexto(texto);
+            let resultado = '';
+            
+            for (let i = 0; i < textoPrep.length; i += 2) {
+              const pos1 = CifradoPlayfair.encontrarPosicion(matriz, textoPrep[i]);
+              const pos2 = CifradoPlayfair.encontrarPosicion(matriz, textoPrep[i + 1]);
+              
+              if (pos1.fila === pos2.fila) {
+                // Misma fila: mover a la derecha
+                resultado += matriz[pos1.fila][(pos1.col + 1) % 5];
+                resultado += matriz[pos2.fila][(pos2.col + 1) % 5];
+              } else if (pos1.col === pos2.col) {
+                // Misma columna: mover hacia abajo
+                resultado += matriz[(pos1.fila + 1) % 5][pos1.col];
+                resultado += matriz[(pos2.fila + 1) % 5][pos2.col];
+              } else {
+                // Formar rectángulo: intercambiar columnas
+                resultado += matriz[pos1.fila][pos2.col];
+                resultado += matriz[pos2.fila][pos1.col];
+              }
+            }
+            return { resultado };
+          },
+          
+          descifrar: (texto, clave) => {
+            if (!clave) return { error: "La clave no puede estar vacía" };
+            
+            const matriz = CifradoPlayfair.crearMatriz(clave);
+            texto = texto.toLowerCase().replace(/[^a-z]/g, '');
+            let resultado = '';
+            
+            for (let i = 0; i < texto.length; i += 2) {
+              const pos1 = CifradoPlayfair.encontrarPosicion(matriz, texto[i]);
+              const pos2 = CifradoPlayfair.encontrarPosicion(matriz, texto[i + 1]);
+              
+              if (!pos1 || !pos2) continue;
+              
+              if (pos1.fila === pos2.fila) {
+                // Misma fila: mover a la izquierda
+                resultado += matriz[pos1.fila][(pos1.col + 4) % 5];
+                resultado += matriz[pos2.fila][(pos2.col + 4) % 5];
+              } else if (pos1.col === pos2.col) {
+                // Misma columna: mover hacia arriba
+                resultado += matriz[(pos1.fila + 4) % 5][pos1.col];
+                resultado += matriz[(pos2.fila + 4) % 5][pos2.col];
+              } else {
+                // Formar rectángulo: intercambiar columnas
+                resultado += matriz[pos1.fila][pos2.col];
+                resultado += matriz[pos2.fila][pos1.col];
+              }
+            }
+            return { resultado };
+          }
+        };
+
+        // **Algoritmo Diffie-Hellman**
+        // Intercambio de claves criptográficas
+        const DiffieHellman = {
+          // Exponenciación modular eficiente
+          modPow: (base, exp, mod) => {
+            let resultado = 1;
+            base = base % mod;
+            while (exp > 0) {
+              if (exp % 2 === 1) resultado = (resultado * base) % mod;
+              exp = Math.floor(exp / 2);
+              base = (base * base) % mod;
+            }
+            return resultado;
+          },
+          
+          generar: (p, g, privada) => {
+            p = parseInt(p) || 23;
+            g = parseInt(g) || 5;
+            privada = parseInt(privada) || Math.floor(Math.random() * 100) + 1;
+            
+            // Calcular clave pública: g^privada mod p
+            const publica = DiffieHellman.modPow(g, privada, p);
+            
+            return {
+              resultado: `Parámetros públicos: p=${p}, g=${g}\nClave privada: ${privada}\nClave pública: ${publica}\n\nPara calcular clave compartida: use la clave pública del otro usuario`
+            };
+          },
+          
+          calcularCompartida: (p, otraPublica, miPrivada) => {
+            p = parseInt(p) || 23;
+            otraPublica = parseInt(otraPublica);
+            miPrivada = parseInt(miPrivada);
+            
+            if (!otraPublica || !miPrivada) {
+              return { error: "Ingrese clave pública del otro usuario y su clave privada" };
+            }
+            
+            // Clave compartida: otraPublica^miPrivada mod p
+            const compartida = DiffieHellman.modPow(otraPublica, miPrivada, p);
+            
+            return { resultado: `Clave compartida calculada: ${compartida}` };
+          }
+        };
+
+        // **Algoritmo RSA**
+        // Cifrado asimétrico con claves pública y privada
+        const RSA = {
+          // Verificar si un número es primo
+          esPrimo: (n) => {
+            if (n < 2) return false;
+            for (let i = 2; i <= Math.sqrt(n); i++) {
+              if (n % i === 0) return false;
+            }
+            return true;
+          },
+          
+          // Máximo común divisor
+          mcd: (a, b) => {
+            while (b !== 0) {
+              let temp = b;
+              b = a % b;
+              a = temp;
+            }
+            return a;
+          },
+          
+          // Inverso modular usando algoritmo extendido de Euclides
+          modInverso: (e, phi) => {
+            let m0 = phi, t, q;
+            let x0 = 0, x1 = 1;
+            
+            if (phi === 1) return 0;
+            
+            while (e > 1) {
+              q = Math.floor(e / phi);
+              t = phi;
+              phi = e % phi;
+              e = t;
+              t = x0;
+              x0 = x1 - q * x0;
+              x1 = t;
+            }
+            
+            if (x1 < 0) x1 += m0;
+            return x1;
+          },
+          
+          generarClaves: (p, q) => {
+            p = parseInt(p);
+            q = parseInt(q);
+            
+            if (!RSA.esPrimo(p) || !RSA.esPrimo(q)) {
+              return { error: "p y q deben ser números primos" };
+            }
+            
+            const n = p * q;
+            const phi = (p - 1) * (q - 1);
+            
+            // Encontrar e (exponente público)
+            let e = 3;
+            while (e < phi) {
+              if (RSA.mcd(e, phi) === 1) break;
+              e += 2;
+            }
+            
+            // Calcular d (exponente privado)
+            const d = RSA.modInverso(e, phi);
+            
+            return {
+              resultado: `Claves RSA generadas:\n\nClave Pública: (e=${e}, n=${n})\nClave Privada: (d=${d}, n=${n})\n\nPara cifrar: use e y n\nPara descifrar: use d y n`
+            };
+          },
+          
+          cifrar: (mensaje, e, n) => {
+            e = parseInt(e);
+            n = parseInt(n);
+            
+            if (!e || !n) {
+              return { error: "Ingrese los valores de e y n de la clave pública" };
+            }
+            
+            // Cifrar cada carácter
+            const cifrado = Array.from(mensaje).map(char => {
+              const m = char.charCodeAt(0);
+              return DiffieHellman.modPow(m, e, n);
+            });
+            
+            return { resultado: cifrado.join(',') };
+          },
+          
+          descifrar: (cifrado, d, n) => {
+            d = parseInt(d);
+            n = parseInt(n);
+            
+            if (!d || !n) {
+              return { error: "Ingrese los valores de d y n de la clave privada" };
+            }
+            
+            try {
+              // Descifrar cada número
+              const numeros = cifrado.split(',').map(num => parseInt(num.trim()));
+              const mensaje = numeros.map(c => {
+                const m = DiffieHellman.modPow(c, d, n);
+                return String.fromCharCode(m);
+              }).join('');
+              
+              return { resultado: mensaje };
+            } catch (e) {
+              return { error: "Formato de texto cifrado inválido" };
+            }
+          }
+        };
+
+        // ==================== COMPONENTE PRINCIPAL ====================
+
+        const AplicacionCifrado = () => {
+          const [algoritmo, setAlgoritmo] = useState('cesar');
+          const [modo, setModo] = useState('cifrar');
+          const [textoEntrada, setTextoEntrada] = useState('');
+          const [textoSalida, setTextoSalida] = useState('');
+          const [parametros, setParametros] = useState({
+            clave: '',
+            desplazamiento: '3',
+            p: '23',
+            g: '5',
+            privada: '',
+            e: '',
+            n: '',
+            d: '',
+            q: ''
+          });
+          const [error, setError] = useState('');
+
+          // Patrón Strategy: mapeo de algoritmos
+          const estrategias = {
+            xor: CifradoXOR,
+            cesar: CifradoCesar,
+            vigenere: CifradoVigenere,
+            playfair: CifradoPlayfair,
+            'diffie-hellman': DiffieHellman,
+            rsa: RSA
+          };
+
+          // Procesar el cifrado/descifrado
+          const procesar = () => {
+            setError('');
+            const estrategia = estrategias[algoritmo];
+            let resultado;
+
+            try {
+              if (algoritmo === 'xor') {
+                resultado = modo === 'cifrar' 
+                  ? estrategia.cifrar(textoEntrada, parametros.clave)
+                  : estrategia.descifrar(textoEntrada, parametros.clave);
+              } else if (algoritmo === 'cesar') {
+                resultado = modo === 'cifrar'
+                  ? estrategia.cifrar(textoEntrada, parametros.desplazamiento)
+                  : estrategia.descifrar(textoEntrada, parametros.desplazamiento);
+              } else if (algoritmo === 'vigenere' || algoritmo === 'playfair') {
+                resultado = modo === 'cifrar'
+                  ? estrategia.cifrar(textoEntrada, parametros.clave)
+                  : estrategia.descifrar(textoEntrada, parametros.clave);
+              } else if (algoritmo === 'diffie-hellman') {
+                resultado = modo === 'cifrar'
+                  ? estrategia.generar(parametros.p, parametros.g, parametros.privada)
+                  : estrategia.calcularCompartida(parametros.p, textoEntrada, parametros.privada);
+              } else if (algoritmo === 'rsa') {
+                if (modo === 'cifrar' && !parametros.e) {
+                  resultado = estrategia.generarClaves(parametros.p, parametros.q);
+                } else {
+                  resultado = modo === 'cifrar'
+                    ? estrategia.cifrar(textoEntrada, parametros.e, parametros.n)
+                    : estrategia.descifrar(textoEntrada, parametros.d, parametros.n);
+                }
+              }
+
+              if (resultado.error) {
+                setError(resultado.error);
+                setTextoSalida('');
+              } else {
+                setTextoSalida(resultado.resultado);
+              }
+            } catch (e) {
+              setError('Error al procesar: ' + e.message);
+            }
+          };
+
+          // Renderizar campos de parámetros según el algoritmo
+          const renderParametros = () => {
+            switch (algoritmo) {
+              case 'xor':
+              case 'vigenere':
+              case 'playfair':
+                return (
+                  <input
+                    type="text"
+                    placeholder="Clave"
+                    value={parametros.clave}
+                    onChange={(e) => setParametros({...parametros, clave: e.target.value})}
+                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                );
+              
+              case 'cesar':
+                return (
+                  <input
+                    type="number"
+                    placeholder="Desplazamiento (ej: 3)"
+                    value={parametros.desplazamiento}
+                    onChange={(e) => setParametros({...parametros, desplazamiento: e.target.value})}
+                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                );
+              
+              case 'diffie-hellman':
+                return (
+                  <div className="space-y-2">
+                    <input
+                      type="number"
+                      placeholder="p (número primo, ej: 23)"
+                      value={parametros.p}
+                      onChange={(e) => setParametros({...parametros, p: e.target.value})}
+                      className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <input
+                      type="number"
+                      placeholder="g (generador, ej: 5)"
+                      value={parametros.g}
+                      onChange={(e) => setParametros({...parametros, g: e.target.value})}
+                      className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Su clave privada"
+                      value={parametros.privada}
+                      onChange={(e) => setParametros({...parametros, privada: e.target.value})}
+                      className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    {modo === 'descifrar' && (
+                      <p className="text-sm text-gray-600">En "Descifrar", ingrese la clave pública del otro usuario en el campo de texto</p>
+                    )}
+                  </div>
+                );
+              
+              case 'rsa':
+                return (
+                  <div className="space-y-2">
+                    {modo === 'cifrar' && !parametros.e && (
+                      <>
+                        <input
+                          type="number"
+                          placeholder="p (número primo, ej: 61)"
+                          value={parametros.p}
+                          onChange={(e) => setParametros({...parametros, p: e.target.value})}
+                          className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <input
+                          type="number"
+                          placeholder="q (número primo, ej: 53)"
+                          value={parametros.q}
+                          onChange={(e) => setParametros({...parametros, q: e.target.value})}
+                          className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <p className="text-sm text-gray-600">Primero genere las claves RSA</p>
+                      </>
+                    )}
+                    {modo === 'cifrar' && parametros.e && (
+                      <>
+                        <input
+                          type="number"
+                          placeholder="e (exponente público)"
+                          value={parametros.e}
+                          onChange={(e) => setParametros({...parametros, e: e.target.value})}
+                          className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <input
+                          type="number"
+                          placeholder="n (módulo)"
+                          value={parametros.n}
+                          onChange={(e) => setParametros({...parametros, n: e.target.value})}
+                          className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </>
+                    )}
+                    {modo === 'descifrar' && (
+                      <>
+                        <input
+                          type="number"
+                          placeholder="d (exponente privado)"
+                          value={parametros.d}
+                          onChange={(e) => setParametros({...parametros, d: e.target.value})}
+                          className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <input
+                          type="number"
+                          placeholder="n (módulo)"
+                          value={parametros.n}
+                          onChange={(e) => setParametros({...parametros, n: e.target.value})}
+                          className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </>
+                    )}
+                  </div>
+                );
+              
+              default:
+                return null;
+            }
+          };
+
+          // Iconos simulados con emojis
+          const LockIcon = () => <span style={{fontSize: '20px'}}>🔒</span>;
+          const UnlockIcon = () => <span style={{fontSize: '20px'}}>🔓</span>;
+          const KeyIcon = () => <span style={{fontSize: '20px'}}>🔑</span>;
+          const ShieldIcon = () => <span style={{fontSize: '20px'}}>🛡️</span>;
+          const AlertIcon = () => <span style={{fontSize: '20px'}}>⚠️</span>;
+
+          return (
+            <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+              <div className="max-w-4xl mx-auto">
+                <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+                  <div className="flex items-center gap-3 mb-2">
+                    <ShieldIcon />
+                    <h1 className="text-3xl font-bold text-gray-800">
+                      Aplicación de Cifrado
+                    </h1>
+                  </div>
+                  <p className="text-gray-600">Seguridad Informática - Trabajo Integrador</p>
+                </div>
+
+                <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+                  <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                    <KeyIcon />
+                    Seleccione el Algoritmo
+                  </h2>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {[
+                      { id: 'xor', nombre: 'XOR' },
+                      { id: 'cesar', nombre: 'César' },
+                      { id: 'vigenere', nombre: 'Vigenère' },
+                      { id: 'playfair', nombre: 'Playfair' },
+                      { id: 'diffie-hellman', nombre: 'Diffie-Hellman' },
+                      { id: 'rsa', nombre: 'RSA' }
+                    ].map(alg => (
+                      <button
+                        key={alg.id}
+                        onClick={() => {
+                          setAlgoritmo(alg.id);
+                          setTextoEntrada('');
+                          setTextoSalida('');
+                          setError('');
+                        }}
+                        className={`p-3 rounded-lg font-medium transition-all ${
+                          algoritmo === alg.id
+                            ? 'bg-indigo-600 text-white shadow-md'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        {alg.nombre}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => {
+                        setModo('cifrar');
+                        setTextoEntrada('');
+                        setTextoSalida('');
+                        setError('');
+                      }}
+                      className={`flex-1 p-3 rounded-lg font-medium transition-all flex items-center justify-center gap-2 ${
+                        modo === 'cifrar'
+                          ? 'bg-green-600 text-white shadow-md'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      <LockIcon />
+                      Cifrar
+                    </button>
+                    <button
+                      onClick={() => {
+                        setModo('descifrar');
+                        setTextoEntrada('');
+                        setTextoSalida('');
+                        setError('');
+                      }}
+                      className={`flex-1 p-3 rounded-lg font-medium transition-all flex items-center justify-center gap-2 ${
+                        modo === 'descifrar'
+                          ? 'bg-orange-600 text-white shadow-md'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      <UnlockIcon />
+                      Descifrar
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+                  <h2 className="text-xl font-semibold mb-4">Parámetros</h2>
+                  {renderParametros()}
+                </div>
+
+                <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+                  <h2 className="text-xl font-semibold mb-4">
+                    {modo === 'cifrar' ? 'Texto a Cifrar' : 'Texto Cifrado'}
+                  </h2>
+                  <textarea
+                    value={textoEntrada}
+                    onChange={(e) => setTextoEntrada(e.target.value)}
+                    placeholder={modo === 'cifrar' ? 'Ingrese el texto a cifrar...' : 'Ingrese el texto cifrado...'}
+                    className="w-full h-32 p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                  />
+                </div>
+
+                <button
+                  onClick={procesar}
+                  className="w-full bg-indigo-600 text-white py-4 rounded-lg font-semibold text-lg hover:bg-indigo-700 transition-colors shadow-lg mb-6"
+                >
+                  {modo === 'cifrar' ? '🔒 Cifrar Mensaje' : '🔓 Descifrar Mensaje'}
+                </button>
+
+                {error && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 flex items-start gap-3">
+                    <AlertIcon />
+                    <div>
+                      <h3 className="font-semibold text-red-800">Error</h3>
+                      <p className="text-red-700">{error}</p>
+                    </div>
+                  </div>
+                )}
+
+                {textoSalida && (
+                  <div className="bg-white rounded-lg shadow-lg p-6">
+                    <h2 className="text-xl font-semibold mb-4 text-green-700">
+                      {modo === 'cifrar' ? '✓ Texto Cifrado' : '✓ Texto Descifrado'}
+                    </h2>
+                    <textarea
+                      value={textoSalida}
+                      readOnly
+                      className="w-full h-32 p-3 border border-green-300 rounded bg-green-50 font-mono"
+                    />
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(textoSalida);
+                        alert('Texto copiado al portapapeles');
+                      }}
+                      className="mt-3 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition-colors"
+                    >
+                      📋 Copiar Resultado
+                    </button>
+                  </div>
+                )}
+
+                <div className="bg-white rounded-lg shadow-lg p-6 mt-6">
+                  <h2 className="text-xl font-semibold mb-3">ℹ️ Información</h2>
+                  <div className="text-gray-700 space-y-2">
+                    {algoritmo === 'xor' && (
+                      <p><strong>Cifrado XOR:</strong> Operación bit a bit entre el texto y la clave. Es simétrico (cifrar y descifrar usan la misma operación).</p>
+                    )}
+                    {algoritmo === 'cesar' && (
+                      <p><strong>Cifrado César:</strong> Desplazamiento simple del alfabeto. Cada letra se mueve un número fijo de posiciones.</p>
+                    )}
+                    {algoritmo === 'vigenere' && (
+                      <p><strong>Cifrado Vigenère:</strong> Cifrado polialfabético que usa una palabra clave. Cada letra de la clave indica cuántas posiciones desplazar.</p>
+                    )}
+                    {algoritmo === 'playfair' && (
+                      <p><strong>Cifrado Playfair:</strong> Cifrado digráfico que usa una matriz 5x5. Cifra pares de letras en lugar de letras individuales.</p>
+                    )}
+                    {algoritmo === 'diffie-hellman' && (
+                      <div>
+                        <p><strong>Diffie-Hellman:</strong> Algoritmo de intercambio de claves. Permite que dos partes establezcan una clave compartida.</p>
+                        <p className="mt-2 text-sm">
+                          <strong>Pasos:</strong><br/>
+                          1. Ambas partes acuerdan p (primo) y g (generador)<br/>
+                          2. Cada uno genera su clave privada<br/>
+                          3. Calculan su clave pública: g^privada mod p<br/>
+                          4. Intercambian claves públicas<br/>
+                          5. Calculan clave compartida: otraPublica^miPrivada mod p
+                        </p>
+                      </div>
+                    )}
+                    {algoritmo === 'rsa' && (
+                      <div>
+                        <p><strong>RSA:</strong> Cifrado asimétrico con clave pública y privada.</p>
+                        <p className="mt-2 text-sm">
+                          <strong>Pasos:</strong><br/>
+                          1. Generar claves: elegir dos primos p y q<br/>
+                          2. Cifrar: usar clave pública (e, n)<br/>
+                          3. Descifrar: usar clave privada (d, n)
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="text-center mt-8 text-gray-600">
+                  <p className="text-sm">
+                    Trabajo Integrador - Seguridad Informática<br/>
+                    Todos los algoritmos implementados con el patrón Strategy
+                  </p>
+                </div>
+              </div>
+            </div>
+          );
+        };
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<AplicacionCifrado />);
+    </script>
+</body>
+</html>
